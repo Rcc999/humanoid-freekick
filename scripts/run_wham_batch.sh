@@ -37,7 +37,6 @@ for VIDEO in "$VIDEO_DIR"/*.{mp4,mov,avi}; do
         --video "$REPO_ROOT/$VIDEO" \
         --output_pth "$OUTPUT_DIR" \
         --save_pkl \
-        --visualize \
         --estimate_local_only
 
     echo "Done: $NAME"
