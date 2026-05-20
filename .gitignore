@@ -1,3 +1,10 @@
+# Virtual envs
+.venv/
+.venv-mac/
+
+# SMPL body model (licensed, not for distribution)
+SMPL_python_v*/
+
 # Python
 __pycache__/
 *.py[cod]
