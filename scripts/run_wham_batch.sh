@@ -5,17 +5,19 @@
 
 set -e
 
-VIDEO_DIR="$1"
-if [ -z "$VIDEO_DIR" ]; then
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+WHAM_DIR="$REPO_ROOT/third_party/WHAM"
+source "$REPO_ROOT/.venv/bin/activate"
+
+if [ -z "$1" ]; then
     echo "Usage: bash scripts/run_wham_batch.sh <folder_of_videos>"
     exit 1
 fi
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-WHAM_DIR="$REPO_ROOT/third_party/WHAM"
+# Resolve VIDEO_DIR to absolute path before any cd calls
+VIDEO_DIR="$(cd "$1" && pwd)"
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-source "$REPO_ROOT/.venv/bin/activate"
+cd "$WHAM_DIR"
 
 for VIDEO in "$VIDEO_DIR"/*.{mp4,mov,avi}; do
     # Skip if glob matched nothing
@@ -32,9 +34,8 @@ for VIDEO in "$VIDEO_DIR"/*.{mp4,mov,avi}; do
 
     mkdir -p "$OUTPUT_DIR"
 
-    cd "$WHAM_DIR"
     python demo.py \
-        --video "$REPO_ROOT/$VIDEO" \
+        --video "$VIDEO" \
         --output_pth "$OUTPUT_DIR" \
         --save_pkl \
         --estimate_local_only
