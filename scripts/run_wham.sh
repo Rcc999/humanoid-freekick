@@ -21,7 +21,7 @@ mkdir -p "$OUTPUT_DIR"
 cd "$WHAM_DIR"
 python demo.py \
     --video "$VIDEO" \
-    --output_dir "$OUTPUT_DIR" \
+    --output_pth "$OUTPUT_DIR" \
     --save_pkl \
     --visualize
 

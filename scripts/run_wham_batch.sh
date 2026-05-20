@@ -35,9 +35,10 @@ for VIDEO in "$VIDEO_DIR"/*.{mp4,mov,avi}; do
     cd "$WHAM_DIR"
     python demo.py \
         --video "$REPO_ROOT/$VIDEO" \
-        --output_dir "$OUTPUT_DIR" \
+        --output_pth "$OUTPUT_DIR" \
         --save_pkl \
-        --visualize
+        --visualize \
+        --estimate_local_only
 
     echo "Done: $NAME"
 done
