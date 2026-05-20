@@ -6,16 +6,21 @@ set -e
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WHAM_DIR="$REPO_ROOT/third_party/WHAM"
 
-# ── 1. Init submodule if not already done ────────────────────────────────────
-git submodule update --init --recursive
+# ── 1. Init submodules (no --recursive: avoids pulling vcpkg/Pangolin) ───────
+git submodule update --init third_party/WHAM
+cd third_party/WHAM
+git submodule update --init third-party/ViTPose third-party/DPVO
+cd ../..
 
-# ── 2. Create conda env ──────────────────────────────────────────────────────
-conda create -n wham python=3.10 -y
-source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate wham
+# ── 2. Python 3.10 via pyenv + venv ─────────────────────────────────────────
+pyenv install 3.10.14 --skip-existing
+pyenv local 3.10.14
+python -m venv .venv
+source .venv/bin/activate
 
-# ── 3. PyTorch with CUDA 12.6 (required for GB10 / Blackwell on DGX Spark) ───
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+# ── 3. PyTorch — aarch64 + CUDA (DGX Spark GB10 / Grace Blackwell) ───────────
+# Standard pytorch.org wheels are x86_64 only; use NVIDIA's PyPI index instead
+pip install torch torchvision --index-url https://pypi.nvidia.com
 
 # ── 4. WHAM dependencies ─────────────────────────────────────────────────────
 cd "$WHAM_DIR"
