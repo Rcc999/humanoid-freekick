@@ -14,8 +14,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WHAM_DIR="$REPO_ROOT/third_party/WHAM"
 OUTPUT_DIR="$REPO_ROOT/output/wham/$(basename "$VIDEO" .mp4)"
 
-source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate wham
+source "$REPO_ROOT/.venv/bin/activate"
 
 mkdir -p "$OUTPUT_DIR"
 

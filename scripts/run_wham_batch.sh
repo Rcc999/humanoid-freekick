@@ -14,8 +14,8 @@ fi
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WHAM_DIR="$REPO_ROOT/third_party/WHAM"
 
-source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate wham
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+source "$REPO_ROOT/.venv/bin/activate"
 
 for VIDEO in "$VIDEO_DIR"/*.{mp4,mov,avi}; do
     # Skip if glob matched nothing
