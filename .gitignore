@@ -14,11 +14,16 @@ env/
 *.pkl
 *.pt
 *.pth
+output/
+checkpoints/
+
+# Videos (ignored globally, except source clips)
 *.mp4
 *.avi
 *.mov
-output/
-checkpoints/
+!freekick-vid/*.mp4
+!freekick-vid/*.mov
+!freekick-vid/*.avi
 
 # Jupyter
 .ipynb_checkpoints/
