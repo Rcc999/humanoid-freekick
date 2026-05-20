@@ -14,8 +14,8 @@ conda create -n wham python=3.10 -y
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate wham
 
-# ── 3. PyTorch with CUDA 11.8 ────────────────────────────────────────────────
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+# ── 3. PyTorch with CUDA 12.6 (required for GB10 / Blackwell on DGX Spark) ───
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
 
 # ── 4. WHAM dependencies ─────────────────────────────────────────────────────
 cd "$WHAM_DIR"
