@@ -1,3 +1,6 @@
 [submodule "third_party/WHAM"]
 	path = third_party/WHAM
 	url = https://github.com/yohanshin/WHAM.git
+[submodule "third_party/ASAP"]
+	path = third_party/ASAP
+	url = https://github.com/lecar-lab/ASAP.git
