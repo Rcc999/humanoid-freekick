@@ -4,7 +4,7 @@ Trim, smooth, and normalize WHAM output into a clean reference motion.
 
 Usage:
     python scripts/process_wham_output.py \
-        --input output/wham/<clip_name>/wham_output.pkl \
+        --input output/wham/<clip_name>/<clip_name>/wham_output.pkl \
         --start <frame> \
         --end <frame> \
         --output output/reference_motion.pkl
@@ -12,41 +12,64 @@ Usage:
 
 import argparse
 import pickle
+import joblib
 import numpy as np
 from scipy.signal import savgol_filter
+
+
+def pick_track(data):
+    """Pick the track with the most frames (main person)."""
+    return max(data.values(), key=lambda t: len(t['frame_ids']))
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input",  required=True, help="Path to wham_output.pkl")
-    parser.add_argument("--start",  type=int, default=None, help="First frame of run-up")
-    parser.add_argument("--end",    type=int, default=None, help="Frame after ball contact")
+    parser.add_argument("--start",  type=int, default=0,  help="First frame of run-up")
+    parser.add_argument("--end",    type=int, default=-1, help="Frame after ball contact (-1 = all)")
     parser.add_argument("--output", required=True, help="Where to save reference_motion.pkl")
     args = parser.parse_args()
 
-    with open(args.input, "rb") as f:
-        data = pickle.load(f)
+    print("Loading WHAM output...")
+    data = joblib.load(args.input)
+    track = pick_track(data)
 
-    print("Keys:", list(data.keys()))
-    print("Total frames:", next(v for v in data.values() if isinstance(v, np.ndarray)).shape[0])
+    poses = track['pose']        # (T, 72) SMPL pose params
+    trans = track['trans']       # (T, 3)  root translation
+    betas = track['betas']       # (T, 10) shape params
+    frame_ids = track['frame_ids']
 
-    # Trim
-    start = args.start or 0
-    end   = args.end   or next(v for v in data.values() if isinstance(v, np.ndarray)).shape[0]
-    trimmed = {k: v[start:end] for k, v in data.items() if isinstance(v, np.ndarray)}
-    print(f"Trimmed to frames {start}–{end} ({end - start} frames)")
+    T = poses.shape[0]
+    end = args.end if args.end != -1 else T
+    print(f"Total frames: {T}, trimming to {args.start}–{end}")
 
-    # Smooth (Savitzky-Golay)
-    trimmed["poses"] = savgol_filter(trimmed["poses"], window_length=7, polyorder=3, axis=0)
-    trimmed["trans"] = savgol_filter(trimmed["trans"], window_length=7, polyorder=3, axis=0)
+    poses = poses[args.start:end]
+    trans = trans[args.start:end]
+    betas = betas[args.start:end]
+    n = poses.shape[0]
+
+    # Smooth with Savitzky-Golay (window must be odd and <= n)
+    win = min(7, n if n % 2 == 1 else n - 1)
+    if win >= 5:
+        poses = savgol_filter(poses, window_length=win, polyorder=3, axis=0)
+        trans = savgol_filter(trans, window_length=win, polyorder=3, axis=0)
 
     # Normalize root to origin
-    trimmed["trans"] -= trimmed["trans"][0]
+    trans -= trans[0]
 
-    with open(args.output, "wb") as f:
-        pickle.dump(trimmed, f)
+    result = {
+        'poses':    poses,   # (T, 72)
+        'trans':    trans,   # (T, 3)
+        'betas':    betas,   # (T, 10)
+        'n_frames': n,
+    }
 
-    print(f"Saved to {args.output}")
+    with open(args.output, 'wb') as f:
+        pickle.dump(result, f)
+
+    print(f"Saved {n} frames to {args.output}")
+    print(f"  poses: {poses.shape}")
+    print(f"  trans: {trans.shape}")
 
 
 if __name__ == "__main__":

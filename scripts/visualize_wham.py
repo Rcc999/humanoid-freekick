@@ -105,6 +105,9 @@ def render_track(track, faces, output_path, image_size=512, device_str="auto"):
     for i in range(T):
         verts = torch.tensor(verts_all[i], dtype=torch.float32).unsqueeze(0).to(device)
 
+        # Fix coordinate system: SMPL has Y-up, pytorch3d renderer has Y-down
+        verts[..., 1] *= -1
+
         # Center and scale
         center = verts.mean(dim=1, keepdim=True)
         verts = verts - center
