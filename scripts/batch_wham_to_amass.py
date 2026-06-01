@@ -47,7 +47,7 @@ def wham_to_amass_coords(poses, trans):
 
     # --- global orientation ---
     # Rotate body from Y-up convention to Z-up convention
-    coord_rot = sRot.from_euler('x', 90, degrees=True)
+    coord_rot = sRot.from_euler('x', -90, degrees=True)
     global_orient = sRot.from_rotvec(poses[:, :3])
     corrected_orient = (coord_rot * global_orient).as_rotvec().astype(np.float32)
     poses_out = poses.copy()
