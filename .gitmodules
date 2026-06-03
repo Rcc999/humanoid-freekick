@@ -4,3 +4,6 @@
 [submodule "third_party/ASAP"]
 	path = third_party/ASAP
 	url = https://github.com/lecar-lab/ASAP.git
+[submodule "third_party/HumanoidSoccer"]
+	path = third_party/HumanoidSoccer
+	url = https://github.com/TeleHuman/HumanoidSoccer.git
