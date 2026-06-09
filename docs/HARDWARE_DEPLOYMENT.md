@@ -40,11 +40,44 @@ The policy expects:
 - **Safety harness:** rope + carabiners to the robot's lifting points,
   attached to a gantry or sturdy frame. For the first 3 hardware tests
   you must keep tension so the robot cannot fall.
-- **E-stop:** physical button wired to cut motor power. Test it BEFORE
-  enabling motors.
-- **Backup E-stop:** the Unitree controller's L2+B combination is the
-  software emergency stop. Keep the controller paired and a teammate
-  holding it during all runs.
+
+### Emergency stops (three independent layers — use ALL of them)
+
+| Layer | Mechanism | Latency | Survives software hang? |
+|-------|-----------|---------|--------------------------|
+| 1. **Hardware kill switch** | Physical button on the G1's back/torso. Cuts motor power directly. | < 50 ms | ✅ Yes |
+| 2. **Joystick L2+B** | Unitree controller's software damping stop. Sends a damping command via the high-level path. | ~50 ms | ✅ Yes (independent process) |
+| 3. **Ctrl+C in SSH** | Kills the Python deployment script; the `finally` block sends `motor_cmd[i].mode = 0` to disable every motor. | depends on script responsiveness | ❌ No |
+
+**Always have a teammate holding the joystick during a run.** The Ctrl+C
+in your SSH terminal is the *least* reliable E-stop — if the script
+hangs or the network drops, it won't help.
+
+In addition, the deployment script has a **built-in software abort**:
+if the pelvis tilts more than `--abort_tilt_deg` (default 60°) off
+vertical, it switches to **damping mode** for 500 ms before fully
+disabling motors. Tunable for tighter safety:
+`--abort_tilt_deg 45` aborts at a much smaller tilt.
+
+### Hard disable vs damping — what the script does
+
+There are two ways to stop a motor, and they have very different physical
+consequences:
+
+| Mode | Motor command | Robot behavior |
+|------|---------------|----------------|
+| **Hard disable** (`mode=0`) | No torque at all | Robot goes **fully limp** — collapses like a rag doll, joints can slam into stops |
+| **Damping** (`mode=1, kp=0, kd>0`) | Resists motion proportional to joint velocity | Robot collapses **gently** — joints brake themselves as they move, gravity pulls the body down softly |
+
+The Unitree controller's L2+B sends damping (not hard disable) — that's
+why it's safer than yanking power. The deployment script does the same:
+
+- **Safety abort (tilt detected):** 500 ms of damping → then hard disable
+- **Ctrl+C while running:** 500 ms of damping → then hard disable
+- **Clean end-of-run:** hard disable (motion is done, robot already stable)
+- **Hardware kill button:** immediate hard cutoff — only use for serious emergencies
+
+You can tune the damping strength with `--damping_kd` (default `5.0`). Higher = more rigid collapse, lower = floppier.
 
 ### Battery and power
 - **Charge to 100%** before any test session
@@ -362,6 +395,35 @@ already in the right pose.
 ### `--max_steps 500`
 Total number of policy steps (500 = 10 s at 50 Hz). The motion is ~7.8 s
 so anything ≥ 400 is fine.
+
+### `--kp_scale 1.0` and `--kd_scale 1.0`
+Multiplicative scale on the training-time stiffness (kp) and damping
+(kd) gains. By default we use the exact values from the policy ONNX
+metadata (matching training). For the **first hardware run** consider
+softer gains:
+
+```bash
+python3 ~/cr7/scripts/deploy_g1_hardware.py \
+    --network_interface eth0 \
+    --kp_scale 0.7 --kd_scale 0.8 \
+    --suspended --execute
+```
+
+Softer gains make the policy less aggressive but also less able to
+balance — only use scales <1.0 while suspended for the first test. Once
+on the ground, return to 1.0.
+
+### `--abort_tilt_deg 60.0`
+Auto-abort threshold for the built-in fall safety. If the pelvis tilts
+more than this many degrees off vertical, the script disables all
+motors. Defaults to 60°. Set lower (e.g. 45°) for tighter safety during
+early runs; set to 90 to effectively disable.
+
+### `--joint_clip_margin 0.05`
+Safety margin (radians) inside each joint's physical limit. Target
+positions are clipped to `[limit_min + margin, limit_max - margin]`.
+Default 0.05 rad (~3°). Increase to 0.1 for more buffer if the robot
+hits joint stops during the motion.
 
 ---
 

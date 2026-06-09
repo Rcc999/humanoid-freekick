@@ -123,6 +123,48 @@ NUM_MOTORS = len(G1_SDK_JOINT_ORDER)  # 29
 CONTROL_HZ = 50.0
 CONTROL_DT = 1.0 / CONTROL_HZ
 
+# G1 joint position limits (radians) — extracted from the official MJCF
+# in third_party/HumanoidSoccer/.../mjcf/g1.xml. Used to clip target_joint_pos
+# before PD so the policy can't drive the motor into a hard joint stop.
+# Order matches G1_SDK_JOINT_ORDER above (index 0 = LeftHipPitch).
+G1_JOINT_LIMITS_SDK = np.array([
+    # legs
+    (-2.5307,  2.8798),   # 0  left_hip_pitch
+    (-0.5236,  2.9671),   # 1  left_hip_roll
+    (-2.7576,  2.7576),   # 2  left_hip_yaw
+    (-0.0873,  2.8798),   # 3  left_knee
+    (-0.8727,  0.5236),   # 4  left_ankle_pitch
+    (-0.2618,  0.2618),   # 5  left_ankle_roll
+    (-2.5307,  2.8798),   # 6  right_hip_pitch
+    (-2.9671,  0.5236),   # 7  right_hip_roll
+    (-2.7576,  2.7576),   # 8  right_hip_yaw
+    (-0.0873,  2.8798),   # 9  right_knee
+    (-0.8727,  0.5236),   # 10 right_ankle_pitch
+    (-0.2618,  0.2618),   # 11 right_ankle_roll
+    # waist
+    (-2.6180,  2.6180),   # 12 waist_yaw
+    (-0.5200,  0.5200),   # 13 waist_roll
+    (-0.5200,  0.5200),   # 14 waist_pitch
+    # left arm
+    (-3.0892,  2.6704),   # 15 left_shoulder_pitch
+    (-1.5882,  2.2515),   # 16 left_shoulder_roll
+    (-2.6180,  2.6180),   # 17 left_shoulder_yaw
+    (-1.0472,  2.0944),   # 18 left_elbow
+    (-1.9722,  1.9722),   # 19 left_wrist_roll
+    (-1.6144,  1.6144),   # 20 left_wrist_pitch
+    (-1.6144,  1.6144),   # 21 left_wrist_yaw
+    # right arm
+    (-3.0892,  2.6704),   # 22 right_shoulder_pitch
+    (-2.2515,  1.5882),   # 23 right_shoulder_roll
+    (-2.6180,  2.6180),   # 24 right_shoulder_yaw
+    (-1.0472,  2.0944),   # 25 right_elbow
+    (-1.9722,  1.9722),   # 26 right_wrist_roll
+    (-1.6144,  1.6144),   # 27 right_wrist_pitch
+    (-1.6144,  1.6144),   # 28 right_wrist_yaw
+], dtype=np.float32)
+G1_JOINT_MIN_SDK = G1_JOINT_LIMITS_SDK[:, 0]
+G1_JOINT_MAX_SDK = G1_JOINT_LIMITS_SDK[:, 1]
+
 # Motor command mode for G1 PMSM motors (position/torque hybrid).
 # Set to 0x01 for normal operation; 0x00 disables the motor.
 MOTOR_MODE_ENABLED = 0x01
@@ -268,7 +310,28 @@ class G1MotorPublisher:
         self._cmd.crc = self._crc.Crc(self._cmd)
         self._pub.Write(self._cmd)
 
+    def damping_all(self, kd_damp: float = 5.0):
+        """Soft stop: motors stay enabled but only apply damping (no position
+        hold, no torque target). The robot collapses gently as gravity pulls
+        it down, instead of slamming joints into stops as with hard disable.
+
+        This matches what the Unitree controller's L2+B does. Always prefer
+        this for safety-driven aborts during dynamic motion.
+        """
+        for i in range(NUM_MOTORS):
+            self._cmd.motor_cmd[i].mode = MOTOR_MODE_ENABLED
+            self._cmd.motor_cmd[i].q = 0.0
+            self._cmd.motor_cmd[i].dq = 0.0
+            self._cmd.motor_cmd[i].kp = 0.0
+            self._cmd.motor_cmd[i].kd = float(kd_damp)
+            self._cmd.motor_cmd[i].tau = 0.0
+        self._cmd.crc = self._crc.Crc(self._cmd)
+        self._pub.Write(self._cmd)
+
     def disable_all(self):
+        """Hard disable: motors fully released, no torque, no damping. Use
+        only at end-of-session or when you really want the robot to go
+        completely limp. For abort-during-motion, prefer damping_all()."""
         for i in range(NUM_MOTORS):
             self._cmd.motor_cmd[i].mode = MOTOR_MODE_DISABLED
             self._cmd.motor_cmd[i].q = 0.0
@@ -507,12 +570,40 @@ def main():
     parser.add_argument("--warmup_seconds", type=float, default=3.0,
                         help="Time to smoothly move from current pose to motion "
                              "frame 0 pose using onboard position control.")
+    parser.add_argument("--kp_scale", type=float, default=1.0,
+                        help="Scale factor on the training-time stiffness (kp). "
+                             "Set to 0.7-0.8 for the first hardware run if you "
+                             "want softer motors. >1.0 makes the robot stiffer.")
+    parser.add_argument("--kd_scale", type=float, default=1.0,
+                        help="Scale factor on the training-time damping (kd). "
+                             "Same advice as --kp_scale.")
+    parser.add_argument("--abort_tilt_deg", type=float, default=60.0,
+                        help="Auto-disable motors if the pelvis tilts more than "
+                             "this many degrees off vertical. Set to 90+ to "
+                             "disable, lower than 60 for tighter safety.")
+    parser.add_argument("--joint_clip_margin", type=float, default=0.05,
+                        help="Safety margin (radians) inside each joint's "
+                             "position limit. Target positions are clipped to "
+                             "[lim_min + margin, lim_max - margin].")
+    parser.add_argument("--damping_kd", type=float, default=5.0,
+                        help="Damping coefficient used during soft stops "
+                             "(safety abort or Ctrl+C). Higher = more rigid "
+                             "collapse, lower = floppier. 5.0 is a sensible "
+                             "default for the G1.")
     parser.add_argument("--dry_run", action="store_true",
                         help="Read sensors and run policy, but do NOT send motor "
                              "commands. Use this first to verify everything.")
+    parser.add_argument("--damping_only", action="store_true",
+                        help="Enable motors in DAMPING mode only (kp=0, "
+                             "kd=--damping_kd), do not warm up, do not run the "
+                             "policy. Hold for --damping_seconds. Use this as "
+                             "Stage 0.5 to verify your kd value is safe BEFORE "
+                             "letting the policy push positions.")
+    parser.add_argument("--damping_seconds", type=float, default=5.0,
+                        help="Duration of --damping_only mode.")
     parser.add_argument("--execute", action="store_true",
-                        help="Required to actually command motors. Without this, "
-                             "the script will not write to motors even without --dry_run.")
+                        help="Required to actually run the policy. Without this, "
+                             "the script will not run the full kick motion.")
     parser.add_argument("--suspended", action="store_true",
                         help="Tell the script the robot is suspended (no floor "
                              "contact). Skips the abort-on-fall safety check.")
@@ -520,9 +611,12 @@ def main():
                         help="Maximum control steps (500 = 10s at 50Hz).")
     args = parser.parse_args()
 
-    if not args.dry_run and not args.execute:
+    if not (args.dry_run or args.damping_only or args.execute):
         sys.exit(
-            "ERROR: must pass either --dry_run (safe) or --execute (commands motors). "
+            "ERROR: must pass one of:\n"
+            "  --dry_run      (safest — no motor commands)\n"
+            "  --damping_only (motors enabled, damping only, no policy)\n"
+            "  --execute      (full deployment — runs the policy)\n"
             "For your first run, use --dry_run."
         )
 
@@ -570,6 +664,22 @@ def main():
     observer.wait_for_first_message(timeout_s=10.0)
     print("[deploy] LowState received. Sensors online.")
 
+    # ── Sanity check sensor readings before any motor command ─────────
+    initial_quat = observer.base_quat_wxyz()
+    initial_q = observer.joint_pos_sdk_order()
+    if not np.all(np.isfinite(initial_quat)) or np.allclose(initial_quat, 0):
+        sys.exit(f"ERROR: invalid IMU quaternion {initial_quat}. Robot IMU "
+                 "not initialized or SDK convention mismatched. Aborting.")
+    if not np.all(np.isfinite(initial_q)):
+        sys.exit(f"ERROR: motor encoders report NaN/inf in initial_q. Aborting.")
+    # Verify robot is roughly upright before we enable anything
+    g0 = projected_gravity_body(initial_quat)
+    if g0[2] > -0.7:
+        tilt = np.rad2deg(np.arccos(-g0[2]))
+        sys.exit(f"ERROR: robot is tilted {tilt:.1f}° at startup "
+                 f"(gravity_z_body={g0[2]:.3f}). Stand it upright first.")
+    print(f"[deploy] Initial pose check OK (tilt {np.rad2deg(np.arccos(-g0[2])):.1f}°)")
+
     publisher = G1MotorPublisher() if not args.dry_run else None
     if args.dry_run:
         print("[deploy] DRY RUN — no motor commands will be sent.")
@@ -603,9 +713,23 @@ def main():
 
     DEFAULT_Q = assets.default_joint_pos          # policy order
     ACTION_SCALE = assets.action_scale            # policy order
-    KP = assets.joint_stiffness                   # policy order
-    KD = assets.joint_damping                     # policy order
+    KP = assets.joint_stiffness * args.kp_scale   # policy order, scaled
+    KD = assets.joint_damping   * args.kd_scale   # policy order, scaled
     TORQUE_LIMITS = assets.torque_limits_policy   # policy order
+
+    # Joint position limits in POLICY order (re-index from SDK order).
+    J_MIN_POLICY = G1_JOINT_MIN_SDK[assets.policy_to_sdk] + args.joint_clip_margin
+    J_MAX_POLICY = G1_JOINT_MAX_SDK[assets.policy_to_sdk] - args.joint_clip_margin
+
+    # Convert abort tilt to gravity_z threshold:
+    # gravity_z = -cos(tilt_angle). Tilt of 0° → grav_z=-1; tilt of 60° → grav_z=-0.5.
+    ABORT_GRAV_Z = -float(np.cos(np.deg2rad(args.abort_tilt_deg)))
+
+    print(f"[deploy] kp scale: {args.kp_scale} (max kp={KP.max():.1f})")
+    print(f"[deploy] kd scale: {args.kd_scale} (max kd={KD.max():.3f})")
+    print(f"[deploy] Abort threshold: tilt > {args.abort_tilt_deg}° "
+          f"(gravity_z > {ABORT_GRAV_Z:.3f})")
+    print(f"[deploy] Joint position margin: ±{args.joint_clip_margin:.3f} rad inside limits")
 
     # ── Main control loop ────────────────────────────────────────────────
     print("[deploy] Entering control loop...")
@@ -666,6 +790,10 @@ def main():
             # ── Action clipping and target joint position ──────────────
             raw_actions = np.clip(actions, -10.0, 10.0)
             target_q_policy = DEFAULT_Q + raw_actions * ACTION_SCALE
+            # Safety clip target to within each joint's physical limits.
+            # The motor firmware also enforces these, but pre-clipping avoids
+            # the PD producing huge torque pushing against a hard stop.
+            target_q_policy = np.clip(target_q_policy, J_MIN_POLICY, J_MAX_POLICY)
             last_action = actions.copy()
 
             # ── PD torque, clipped to per-joint effort limits ──────────
@@ -676,11 +804,17 @@ def main():
             # ── Safety: abort if base orientation indicates a fall ─────
             if not args.suspended:
                 gravity_z_body = proj_grav[2]
-                if gravity_z_body > -0.5:  # body is no longer mostly upright
+                if gravity_z_body > ABORT_GRAV_Z:
+                    tilt_deg = np.rad2deg(np.arccos(-gravity_z_body))
                     print(f"[deploy] ABORT at step {step}: pelvis tilted "
-                          f"(gravity_z_body={gravity_z_body:.3f}). "
-                          f"Disabling motors.")
+                          f"{tilt_deg:.1f}° (limit {args.abort_tilt_deg:.0f}°). "
+                          f"Switching to damping mode (soft fall).")
                     if publisher is not None:
+                        # Soft stop: keep motors enabled with damping only so
+                        # the robot collapses gently, not as a rag doll.
+                        for _ in range(int(0.5 * CONTROL_HZ)):  # 500ms of damping
+                            publisher.damping_all(kd_damp=args.damping_kd)
+                            time.sleep(CONTROL_DT)
                         publisher.disable_all()
                     return
 
@@ -705,11 +839,20 @@ def main():
                       f"(target {CONTROL_DT*1000:.1f}ms)")
 
     except KeyboardInterrupt:
-        print("\n[deploy] Interrupted by user — disabling motors.")
+        print("\n[deploy] Interrupted by user — switching to damping mode for soft fall.")
+        if publisher is not None:
+            # 500 ms of damping so the robot collapses gently rather than
+            # going limp instantly when Ctrl+C hits mid-motion.
+            try:
+                for _ in range(int(0.5 * CONTROL_HZ)):
+                    publisher.damping_all(kd_damp=args.damping_kd)
+                    time.sleep(CONTROL_DT)
+            except Exception:
+                pass
     finally:
         if publisher is not None:
             publisher.disable_all()
-            print("[deploy] Motors disabled. Done.")
+            print("[deploy] Motors fully disabled. Done.")
 
 
 if __name__ == "__main__":
