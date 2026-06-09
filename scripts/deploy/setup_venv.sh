@@ -37,6 +37,21 @@ if ! pip install -r "$REQ_FILE"; then
     pip install "git+https://github.com/unitreerobotics/unitree_sdk2_python.git"
 fi
 
+echo "[setup] Pre-downloading the policy ONNX from Hugging Face"
+echo "        (so the first run doesn't need internet at the test space)"
+HF_REPO="Shish999/cr7-freekick-g1"
+HF_FILE="dr/2026-06-04_17-19-06/exported/policy_12000_football_stylized-001_right.onnx"
+python3 - <<PYEOF
+import sys
+try:
+    from huggingface_hub import hf_hub_download
+    path = hf_hub_download(repo_id="${HF_REPO}", filename="${HF_FILE}")
+    print(f"[setup] Policy cached at: {path}")
+except Exception as e:
+    print(f"[setup] WARNING: could not pre-download policy ({e}).")
+    print("[setup] The deployment script will retry on first run.")
+PYEOF
+
 echo ""
 echo "[setup] DONE."
 echo ""

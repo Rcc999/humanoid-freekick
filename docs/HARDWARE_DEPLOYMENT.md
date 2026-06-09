@@ -10,10 +10,14 @@ This document walks through deploying the trained policy on a real Unitree G1
 
 ## 0. What you have
 
-- **Policy:** `policy_12000_dr_cr7.onnx` — the 12k DR-fine-tuned policy that
-  passed sim2sim + noise validation in MuJoCo
+- **Policy:** `policy_12000_football_stylized-001_right.onnx` — the 12k
+  DR-fine-tuned policy that passed sim2sim + noise validation in MuJoCo.
+  Hosted on Hugging Face at
+  [`Shish999/cr7-freekick-g1`](https://huggingface.co/Shish999/cr7-freekick-g1)
+  and auto-downloaded by the deployment script on first run.
 - **Motion file:** `football_stylized-001_right.npz` (right-footed sidestep
-  kick, embedded in the policy via the ONNX motion table)
+  kick, embedded in the policy via the ONNX motion table — no separate
+  file to copy).
 - **Deployment script:** `scripts/deploy_g1_hardware.py`
 
 The policy expects:
@@ -72,6 +76,13 @@ cd cr7
 (If you've already cloned it, just `cd ~/cr7 && git pull` to fetch the
 latest deployment files.)
 
+> **If the repo is private** the Jetson will prompt for a GitHub username
+> + Personal Access Token (PAT). Generate one at
+> https://github.com/settings/tokens (scope: `repo`) and paste it as the
+> password. Alternatively, clone via SSH after copying your SSH key to
+> the Jetson:
+> `git clone git@github.com:Rcc999/humanoid-freekick.git cr7`
+
 Then set up a Python virtual environment with everything the deployment
 needs:
 
@@ -100,19 +111,6 @@ python3 -c 'import onnxruntime, onnx, numpy, huggingface_hub, unitree_sdk2py; pr
 You should see `OK`. If you see an ImportError, re-run `bash setup_venv.sh`
 or install the missing package manually with `pip install <name>`.
 
-### Policy download
-The deployment script auto-downloads the policy from Hugging Face on first
-run. The default is the 12k DR-fine-tuned checkpoint that passed sim2sim
-+ noise validation:
-
-- **Repo:** [`Shish999/cr7-freekick-g1`](https://huggingface.co/Shish999/cr7-freekick-g1)
-- **File:** `dr/2026-06-04_17-19-06/exported/policy_12000_football_stylized-001_right.onnx`
-
-The download is cached at `~/.cache/huggingface/hub` so it only happens
-once. If the robot's Jetson has no internet, download the file on your
-laptop, `scp` it to the Jetson, and pass `--onnx /path/to/local.onnx` to
-skip the HF download.
-
 ### Robot mode
 Put the G1 into **developer mode** so the built-in `sport_client` does NOT
 move the motors. With the joystick:
@@ -124,7 +122,11 @@ move the motors. With the joystick:
 ### Policy file
 
 You do NOT need to copy the policy manually — `deploy_g1_hardware.py`
-downloads it from Hugging Face on first run and caches it.
+downloads it from Hugging Face on first run and caches it at
+`~/.cache/huggingface/hub`. The default file is:
+
+- **Repo:** [`Shish999/cr7-freekick-g1`](https://huggingface.co/Shish999/cr7-freekick-g1)
+- **File:** `dr/2026-06-04_17-19-06/exported/policy_12000_football_stylized-001_right.onnx`
 
 If the Jetson has no internet, download the policy on your laptop first
 and `scp` only the ONNX file (the script + docs come via `git clone`):
