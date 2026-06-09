@@ -1,0 +1,15 @@
+# Hardware deployment dependencies for scripts/deploy_g1_hardware.py
+# Tested on Unitree G1's onboard Jetson Orin (Ubuntu 20.04, aarch64, Python 3.10+).
+# Install into a venv: see setup_venv.sh in this directory.
+
+# ── Core RL inference ──
+numpy>=1.23,<2.0
+onnx>=1.14
+onnxruntime>=1.17
+
+# ── Hugging Face model fetcher ──
+huggingface_hub>=0.20
+
+# ── Unitree SDK2 Python bindings (talks to the robot via DDS) ──
+# Use a pinned tag if available; the GitHub HEAD is also fine.
+unitree_sdk2_python>=1.0

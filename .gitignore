@@ -32,6 +32,10 @@ checkpoints/
 !freekick-vid/*.mov
 !freekick-vid/*.avi
 
+# Sim2sim outputs (generated artefacts, not source)
+sim2sim_videos/
+MUJOCO_LOG.TXT
+
 # Jupyter
 .ipynb_checkpoints/
 
